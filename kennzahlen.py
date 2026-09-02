@@ -15,49 +15,44 @@ KENNZAHLEN = [
     ("Monatsverlauf", {"betrag", "datum"}),
     ("Auswertung je Kostenstelle", {"betrag", "kostenstelle"})
 ]
-def main():
 
-    parser = argparse.ArgumentParser(description="Kennzahlen aus einer Buchungs-CSV berechnen.")
-    parser.add_argument("csv_pfad", help="Pfad zur Buchungs-CSV-Datei")
 
-    args = parser.parse_args()
+class CsvFehler(Exception):
+    """Etwas an der CSV-Datei stimmt nicht - Datei fehlt, ist leer oder enthält ungültige Werte."""
 
-    csv_pfad = args.csv_pfad
 
+def lade_buchungen(csv_pfad):
     try:
         with open(csv_pfad, encoding="utf-8", newline="") as datei:
             leser = csv.DictReader(datei, delimiter=";")
             spalten = leser.fieldnames
             buchungen = list(leser)
-
     except FileNotFoundError:
-        print(f"Fehler: Datei nicht gefunden: {csv_pfad}", file=sys.stderr)
-        sys.exit(1)
+        raise CsvFehler(f"Datei nicht gefunden: {csv_pfad}")
 
     if spalten is None:
-        print(f"Fehler: Keine Spalten in der CSV-Datei gefunden: {csv_pfad}", file=sys.stderr)
-        sys.exit(1)
+        raise CsvFehler(f"Keine Spalten in der CSV-Datei gefunden: {csv_pfad}")
 
-    print(f"Datei: {csv_pfad}")
-    print(f"Spalten: {', '.join(spalten)}")
-    print(f"{len(buchungen)} Buchungen gelesen")
+    return spalten, buchungen
 
+
+def wandle_werte(buchungen, spalten):
     if "betrag" in spalten:
         for buchung in buchungen:
             try:
                 buchung["betrag"] = float(buchung["betrag"].replace(".", "").replace(",", "."))
             except ValueError:
-                print(f"Fehler: Ungültiger Betrag: {buchung['betrag']}", file=sys.stderr)
-                sys.exit(1)
+                raise CsvFehler(f"Ungültiger Betrag: {buchung['betrag']}")
 
     if "datum" in spalten:
         for buchung in buchungen:
             try:
                 buchung["datum"] = datetime.strptime(buchung["datum"], "%d.%m.%Y").date()
             except ValueError:
-                print(f"Fehler: Ungültiges Datum: {buchung['datum']}", file=sys.stderr)
-                sys.exit(1)
+                raise CsvFehler(f"Ungültiges Datum: {buchung['datum']}")
 
+
+def bestimme_kennzahlen(spalten):
     möglich = []
     fehlt = []
 
@@ -69,39 +64,15 @@ def main():
         else:
             fehlt.append(f"{name} (braucht {', '.join(sorted(benoetigt - vorhanden))})")
 
+    return möglich, fehlt
+
+
+def zeige_liste(ueberschrift, eintraege):
     print()
-    print("Mögliche Kennzahlen:")
-    for name in möglich:
-        print(f"  - {name}")
+    print(ueberschrift)
+    for eintrag in eintraege:
+        print(f"  - {eintrag}")
 
-    print()
-    print("Nicht möglich:")
-
-    for name in fehlt:
-        print(f"  - {name}")
-
-    if "Summen und Saldo" in möglich:
-        einnahmen, ausgaben, saldo = berechne_summen(buchungen)
-        print()
-        print("Summen und Saldo:")
-        print(f"  Einnahmen: {round(einnahmen, 2)}")
-        print(f"  Ausgaben: {round(ausgaben, 2)}")
-        print(f"  Saldo: {round(saldo, 2)}")
-
-    
-    if "Auswertung nach Kategorie" in möglich:
-        kategorien = berechne_kategorien(buchungen)
-        print()
-        print("Auswertung nach Kategorie:")
-        for kategorie, summe in sorted(kategorien.items()):
-            print(f"  {kategorie}: {round(summe, 2)}")
-
-    if "Monatsverlauf" in möglich:
-        monate = berechne_monate(buchungen)
-        print()
-        print("Monatsverlauf:")
-        for monat, summe in sorted(monate.items()):
-            print(f"  {monat}: {round(summe, 2)}")
 
 def berechne_summen(buchungen):
     einnahmen = 0
@@ -116,7 +87,7 @@ def berechne_summen(buchungen):
 
 
 def berechne_kategorien(buchungen):
-    summen ={}
+    summen = {}
     for buchung in buchungen:
         kategorie = buchung["kategorie"]
         summen[kategorie] = summen.get(kategorie, 0) + buchung["betrag"]
@@ -129,6 +100,59 @@ def berechne_monate(buchungen):
         monat = buchung["datum"].strftime("%Y-%m")
         summen[monat] = summen.get(monat, 0) + buchung["betrag"]
     return summen
+
+
+def formatiere_betrag(wert):
+    text = f"{wert:,.2f}"
+    text = text.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"{text} €"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Kennzahlen aus einer Buchungs-CSV berechnen.")
+    parser.add_argument("csv_pfad", help="Pfad zur Buchungs-CSV-Datei")
+
+    args = parser.parse_args()
+    csv_pfad = args.csv_pfad
+
+    try:
+        spalten, buchungen = lade_buchungen(csv_pfad)
+        wandle_werte(buchungen, spalten)
+    except CsvFehler as fehler:
+        print(f"Fehler: {fehler}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Datei: {csv_pfad}")
+    print(f"Spalten: {', '.join(spalten)}")
+    print(f"{len(buchungen)} Buchungen gelesen")
+
+    möglich, fehlt = bestimme_kennzahlen(spalten)
+
+    zeige_liste("Mögliche Kennzahlen:", möglich)
+    zeige_liste("Nicht möglich:", fehlt)
+
+    if "Summen und Saldo" in möglich:
+        einnahmen, ausgaben, saldo = berechne_summen(buchungen)
+        print()
+        print("Summen und Saldo:")
+        print(f"  {'Einnahmen:':12} {formatiere_betrag(einnahmen):>14}")
+        print(f"  {'Ausgaben:':12} {formatiere_betrag(ausgaben):>14}")
+        print(f"  {'Saldo:':12} {formatiere_betrag(saldo):>14}")
+
+    if "Auswertung nach Kategorie" in möglich:
+        kategorien = berechne_kategorien(buchungen)
+        print()
+        print("Auswertung nach Kategorie:")
+        for kategorie, summe in sorted(kategorien.items()):
+            print(f"  {kategorie + ':':16} {formatiere_betrag(summe):>14}")
+
+    if "Monatsverlauf" in möglich:
+        monate = berechne_monate(buchungen)
+        print()
+        print("Monatsverlauf:")
+        for monat, summe in sorted(monate.items()):
+            print(f"  {monat + ':':16} {formatiere_betrag(summe):>14}")
+
 
 if __name__ == "__main__":
     main()
