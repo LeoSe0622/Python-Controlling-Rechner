@@ -6,6 +6,7 @@ Aufruf:
 import argparse
 import sys
 import csv
+from datetime import datetime
 
 def main():
     parser = argparse.ArgumentParser(description="Kennzahlen aus einer Buchungs-CSV berechnen.")
@@ -29,6 +30,16 @@ def main():
     print(f"Datei: {csv_pfad}")
     print(f"Spalten: {', '.join(spalten)}")
     print(f"{len(buchungen)} Buchungen gelesen")
-        
+    if "betrag" in spalten:
+        for buchung in buchungen:
+            buchung["betrag"] = float(buchung["betrag"].replace(",", "."))
+            print(buchung["kategorie"], "-> ", buchung["betrag"])
+    if "datum" in spalten:
+        for buchung in buchungen:
+            try:
+                buchung["datum"] = datetime.strptime(buchung["datum"], "%d.%m.%Y").date()
+            except ValueError:
+                print(f"Fehler: Ungültiges Datum: {buchung['datum']}", file=sys.stderr)
+                sys.exit(1)
 if __name__ == "__main__":
     main()
