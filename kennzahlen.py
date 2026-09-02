@@ -21,6 +21,31 @@ class CsvFehler(Exception):
     """Etwas an der CSV-Datei stimmt nicht - Datei fehlt, ist leer oder enthält ungültige Werte."""
 
 
+def lade_werte(csv_pfad):
+    try:
+        with open(csv_pfad, encoding="utf-8", newline="") as datei:
+            leser = csv.DictReader(datei, delimiter=";")
+            spalten = leser.fieldnames
+            zeilen = list(leser)
+    except FileNotFoundError:
+        raise CsvFehler(f"Datei nicht gefunden: {csv_pfad}")
+
+    if spalten is None:
+        raise CsvFehler(f"Keine Spalten in der CSV-Datei gefunden: {csv_pfad}")
+    if "groesse" not in spalten or "wert" not in spalten:
+        raise CsvFehler(f"Falsches Format: erwartet 'groesse' und 'wert' in den Spalten")
+
+    werte = {}
+    for zeile in zeilen:
+        name = zeile["groesse"]
+        try:
+            werte[name] = float(zeile["wert"].replace(".", "").replace(",", "."))
+        except ValueError:
+            raise CsvFehler(f"Ungültiger Wert für {name}: {zeile['wert']}")
+
+    return werte
+
+
 def lade_buchungen(csv_pfad):
     try:
         with open(csv_pfad, encoding="utf-8", newline="") as datei:
@@ -108,6 +133,47 @@ def formatiere_betrag(wert):
     return f"{text} €"
 
 
+def rechne_deckungsbeitrag(werte):
+    umsatz = werte["absatzmenge"] * werte["preis_stueck"]
+    var_kosten_gesamt = werte["absatzmenge"] * werte["var_kosten_stueck"]
+    db_stueck = werte["preis_stueck"] - werte["var_kosten_stueck"]
+    db_gesamt = werte["absatzmenge"] * db_stueck
+    betriebsergebnis = db_gesamt - werte["fixkosten"]
+    return {
+        "Umsatz": umsatz,
+        "Variable Kosten gesamt": var_kosten_gesamt,
+        "Deckungsbeitrag je Stück": db_stueck,
+        "Deckungsbeitrag gesamt": db_gesamt,
+        "Betriebsergebnis": betriebsergebnis
+    }
+
+
+RECHNUNGEN = [
+    ("Deckungsbeitragsrechnung",
+     {"absatzmenge", "preis_stueck", "var_kosten_stueck", "fixkosten"},
+     rechne_deckungsbeitrag)
+]
+
+
+def fuehre_rechnungen_aus(werte):
+    ergebnisse = []
+    fehlt = []
+    vorhanden = set(werte)
+    for name, benoetigt, funktion in RECHNUNGEN:
+        if benoetigt <= vorhanden:
+            ergebnisse.append((name, funktion(werte)))
+        else:
+            fehlt.append(f"{name} (braucht {', '.join(sorted(benoetigt - vorhanden))})")
+    return ergebnisse, fehlt
+
+
+def zeige_ergebnis(name, ergebnis):
+    print()
+    print(f"{name}:")
+    for bezeichnung, wert in ergebnis.items():
+        print(f"  {bezeichnung + ':':28} {formatiere_betrag(wert):>16}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Kennzahlen aus einer Buchungs-CSV berechnen.")
     parser.add_argument("csv_pfad", help="Pfad zur Buchungs-CSV-Datei")
@@ -115,43 +181,22 @@ def main():
     args = parser.parse_args()
     csv_pfad = args.csv_pfad
 
+    
     try:
-        spalten, buchungen = lade_buchungen(csv_pfad)
-        wandle_werte(buchungen, spalten)
+        werte = lade_werte(csv_pfad)
     except CsvFehler as fehler:
         print(f"Fehler: {fehler}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Datei: {csv_pfad}")
-    print(f"Spalten: {', '.join(spalten)}")
-    print(f"{len(buchungen)} Buchungen gelesen")
+    print(f"Spalten: {', '.join(sorted(werte.keys()))}")
+    print(f"{len(werte)} Werte gelesen")
 
-    möglich, fehlt = bestimme_kennzahlen(spalten)
+    ergebnisse, fehlt = fuehre_rechnungen_aus(werte)
 
-    zeige_liste("Mögliche Kennzahlen:", möglich)
+    for name, ergebnis in ergebnisse:
+        zeige_ergebnis(name, ergebnis)
     zeige_liste("Nicht möglich:", fehlt)
-
-    if "Summen und Saldo" in möglich:
-        einnahmen, ausgaben, saldo = berechne_summen(buchungen)
-        print()
-        print("Summen und Saldo:")
-        print(f"  {'Einnahmen:':12} {formatiere_betrag(einnahmen):>14}")
-        print(f"  {'Ausgaben:':12} {formatiere_betrag(ausgaben):>14}")
-        print(f"  {'Saldo:':12} {formatiere_betrag(saldo):>14}")
-
-    if "Auswertung nach Kategorie" in möglich:
-        kategorien = berechne_kategorien(buchungen)
-        print()
-        print("Auswertung nach Kategorie:")
-        for kategorie, summe in sorted(kategorien.items()):
-            print(f"  {kategorie + ':':16} {formatiere_betrag(summe):>14}")
-
-    if "Monatsverlauf" in möglich:
-        monate = berechne_monate(buchungen)
-        print()
-        print("Monatsverlauf:")
-        for monat, summe in sorted(monate.items()):
-            print(f"  {monat + ':':16} {formatiere_betrag(summe):>14}")
 
 
 if __name__ == "__main__":

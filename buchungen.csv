@@ -1,5 +1,5 @@
-datum;betrag;kategorie;beschreibung
-15.01.2026;-1250,00;Miete;Büromiete Januar
-20.01.2026;4800,00;Umsatz;Rechnung 2026-014
-22.01.2026;-89,90;Software;Lizenz Buchhaltung
-05.02.2026;-1250,00;Miete;Büromiete Februar
+groesse;wert
+absatzmenge;5000
+preis_stueck;80,00
+var_kosten_stueck;48,00
+fixkosten;120000,00
