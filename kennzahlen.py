@@ -44,11 +44,11 @@ def zeige_liste(ueberschrift, eintraege):
         print(f"  - {eintrag}")
 
 
-def formatiere_betrag(wert, einheit="€"):
+def formatiere_wert(wert, einheit="€"):
+    if einheit == "%":
+        wert = wert * 100
     text = f"{wert:,.2f}"
     text = text.replace(",", "X").replace(".", ",").replace("X", ".")
-    if einheit == "%":
-        text = f"{wert * 100:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{text} {einheit}"
 
 
@@ -129,6 +129,58 @@ def rechne_liquidität(werte):
     }
 
 
+def rechne_investition_statisch(werte):
+    anschaffungswert = werte["anschaffungswert"]
+    restwert = werte["restwert"]
+    nutzungsdauer = werte["nutzungsdauer"]
+    kalkulationszinssatz = werte["kalkulationszinssatz"]
+    jaehrlicher_gewinn = werte["jaehrlicher_gewinn"]
+
+    abschreibung = (anschaffungswert - restwert) / nutzungsdauer
+    durchschnittskapital = (anschaffungswert + restwert) / 2
+    kalk_zinsen = durchschnittskapital * kalkulationszinssatz
+    rentabilitaet = (jaehrlicher_gewinn + kalk_zinsen) / durchschnittskapital
+    rueckfluss = jaehrlicher_gewinn + abschreibung
+    amortisationsdauer = anschaffungswert / rueckfluss
+
+    return {
+        "Abschreibung p.a.": (abschreibung, "€"),
+        "Durchschnittlich gebundenes Kapital": (durchschnittskapital, "€"),
+        "Kalkulatorische Zinsen p.a.": (kalk_zinsen, "€"),
+        "Rentabilität": (rentabilitaet, "%"),
+        "Jährlicher Rückfluss": (rueckfluss, "€"),
+        "Amortisationsdauer": (amortisationsdauer, "Jahre")
+    }
+
+
+
+def sammle_zahlungen(werte):
+    zahlungen = []
+    t = 0
+    while f"zahlung_{t}" in werte:
+        zahlungen.append(werte[f"zahlung_{t}"])
+        t += 1
+    return zahlungen
+
+
+def rechne_investition_dynamisch(werte):
+    zahlungen = sammle_zahlungen(werte)
+    i = werte["kalkulationszinssatz"]
+
+    kapitalwert = 0
+    for t,zahlung in enumerate(zahlungen):
+        kapitalwert += zahlung / (1 + i) ** t
+
+    n = len(zahlungen) - 1
+    kfr = (i * (1 + i) ** n) / ((1 + i) ** n - 1)
+    annuitaet = kapitalwert * kfr
+
+    return {    "Kapitalwert":            (kapitalwert, "€"),
+                "Annuität":               (annuitaet, "€"),
+                "Anzahl Perioden":        (n, "Jahre")
+    }
+
+
 RECHNUNGEN = [
     ("Deckungsbeitragsrechnung",
      {"absatzmenge", "preis_stueck", "var_kosten_stueck", "fixkosten"},
@@ -139,6 +191,8 @@ RECHNUNGEN = [
     ("ROI / DuPont", {"umsatz", "betriebsergebnis", "gesamtkapital"}, rechne_roi),
     ("Kapitalstruktur", {"eigenkapital", "fremdkapital"}, rechne_kapitalstruktur),
     ("Liquidität", {"jahresueberschuss", "abschreibungen", "umlaufvermoegen", "kurzfristige_verbindlichkeiten"}, rechne_liquidität),
+    ("Investitionsrechnung (statisch)", {"anschaffungswert", "restwert", "nutzungsdauer", "kalkulationszinssatz", "jaehrlicher_gewinn"}, rechne_investition_statisch),
+    ("Investitionsrechnung (dynamisch)" , {"kalkulationszinssatz", "zahlung_0"},rechne_investition_dynamisch),
 ]
 
 
@@ -161,7 +215,7 @@ def zeige_ergebnis(name, ergebnis):
     print()
     print(f"{name}:")
     for bezeichnung, (wert, einheit) in ergebnis.items():
-        print(f"  {bezeichnung + ':':28} {formatiere_betrag(wert, einheit):>18}")
+        print(f"  {bezeichnung + ':':28} {formatiere_wert(wert, einheit):>18}")
 
 
 def main():
@@ -178,7 +232,7 @@ def main():
         sys.exit(1)
 
     print(f"Datei: {csv_pfad}")
-    print(f"Spalten: {', '.join(sorted(werte.keys()))}")
+    print(f"Größen: {', '.join(sorted(werte.keys()))}")
     print(f"{len(werte)} Werte gelesen")
 
     ergebnisse, fehlt = fuehre_rechnungen_aus(werte)
