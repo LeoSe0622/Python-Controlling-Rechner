@@ -233,5 +233,42 @@ class TestKommandozeile(unittest.TestCase):
         self.assertEqual(ergebnis.returncode, 2)
 
 
+class TestRegister(unittest.TestCase):
+    """Prüft das Register selbst, nicht einzelne Formeln."""
+
+    def test_jede_rechenfunktion_ist_eingetragen(self):
+        """Eine geschriebene, aber nicht eingetragene Funktion wird nie aufgerufen."""
+        eingetragen = {funktion for _, _, funktion in kennzahlen.RECHNUNGEN}
+        geschrieben = {
+            getattr(kennzahlen, name)
+            for name in dir(kennzahlen)
+            if name.startswith("rechne_")
+        }
+        vergessen = sorted(f.__name__ for f in geschrieben - eingetragen)
+        self.assertEqual(vergessen, [], f"nicht im Register: {vergessen}")
+
+    def test_namen_sind_eindeutig(self):
+        namen = [name for name, _, _ in kennzahlen.RECHNUNGEN]
+        self.assertEqual(len(namen), len(set(namen)))
+
+    def test_alles_csv_laesst_jede_rechnung_laufen(self):
+        """tests/04_alles.csv muss alle Größen enthalten, die irgendeine Rechnung braucht."""
+        werte = kennzahlen.lade_werte("tests/04_alles.csv")
+        ergebnisse, fehlt = kennzahlen.fuehre_rechnungen_aus(werte)
+        self.assertEqual(fehlt, [], f"nicht berechenbar: {fehlt}")
+        self.assertEqual(len(ergebnisse), len(kennzahlen.RECHNUNGEN))
+
+    def test_ergebnisse_haben_wert_und_einheit(self):
+        """Jede Rechnung muss {Bezeichnung: (Zahl, Einheit)} liefern."""
+        werte = kennzahlen.lade_werte("tests/04_alles.csv")
+        for name, _, funktion in kennzahlen.RECHNUNGEN:
+            with self.subTest(rechnung=name):
+                for bezeichnung, paar in funktion(werte).items():
+                    self.assertEqual(len(paar), 2, f"{name} / {bezeichnung}")
+                    wert, einheit = paar
+                    self.assertIsInstance(wert, (int, float))
+                    self.assertIsInstance(einheit, str)
+
+
 if __name__ == "__main__":
     unittest.main()

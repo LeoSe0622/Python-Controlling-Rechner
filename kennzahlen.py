@@ -390,7 +390,25 @@ RECHNUNGEN = [
      rechne_prozesskosten),
     ("Economic Value Added",
      {"nopat", "investiertes_kapital", "kapitalkostensatz"},
-     rechne_eva)
+     rechne_eva),
+    ("Abweichungsanalyse (Material)",
+     {"plan_menge", "plan_preis", "ist_menge", "ist_preis"},
+     rechne_abweichungsanalyse),
+    ("Plankostenrechnung (flexibel)",
+     {"plan_beschaeftigung", "ist_beschaeftigung", "plan_fixkosten",
+      "plan_var_kosten_je_einheit", "ist_kosten"},
+     rechne_plankosten),
+    ("Kostenartenrechnung",
+     {"materialkosten", "personalkosten", "abschreibungen", "sonstige_kosten"},
+     rechne_kostenarten),
+    ("Zuschlagssätze (BAB)",
+     {"fertigungsmaterial", "materialgemeinkosten", "fertigungsloehne",
+      "fertigungsgemeinkosten", "verwaltungsgemeinkosten", "vertriebsgemeinkosten"},
+     rechne_zuschlagssaetze),
+    ("Zuschlagskalkulation",
+     {"fertigungsmaterial_stueck", "fertigungsloehne_stueck", "mgk_satz",
+      "fgk_satz", "vwgk_satz", "vtgk_satz", "gewinnzuschlag"},
+     rechne_kalkulation),
 ]
 
 
