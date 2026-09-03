@@ -63,7 +63,7 @@ Zeilen stören nicht — das Programm meldet sie nur und schlägt bei Tippfehler
 ähnliche Namen vor:
 
 ```
-Unbekannte Groessen (1) - keine Rechnung verwendet sie:
+Unbekannte Größen (1) - keine Rechnung verwendet sie:
   - absatzmnge (meinst du absatzmenge?)
 ```
 

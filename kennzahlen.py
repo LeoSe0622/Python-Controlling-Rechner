@@ -40,18 +40,13 @@ def lade_werte(csv_pfad):
     return werte
 
 
-def zeige_liste(ueberschrift, eintraege):
-    print()
-    print(ueberschrift)
-    for eintrag in eintraege:
-        print(f"  - {eintrag}")
-
-
 def formatiere_wert(wert, einheit="€"):
     if einheit == "%":
         wert = wert * 100
     text = f"{wert:,.2f}"
     text = text.replace(",", "X").replace(".", ",").replace("X", ".")
+    if not einheit:
+        return text
     return f"{text} {einheit}"
 
 
@@ -171,20 +166,21 @@ def rechne_investition_dynamisch(werte):
     i = werte["kalkulationszinssatz"]
 
     kapitalwert = 0
-    for t,zahlung in enumerate(zahlungen):
+    for t, zahlung in enumerate(zahlungen):
         kapitalwert += zahlung / (1 + i) ** t
 
     n = len(zahlungen) - 1
     kfr = (i * (1 + i) ** n) / ((1 + i) ** n - 1)
     annuitaet = kapitalwert * kfr
 
-    return {    "Kapitalwert":            (kapitalwert, "€"),
-                "Annuität":               (annuitaet, "€"),
-                "Anzahl Perioden":        (n, "Jahre")
+    return {
+        "Kapitalwert": (kapitalwert, "€"),
+        "Annuität": (annuitaet, "€"),
+        "Anzahl Perioden": (n, "Jahre")
     }
 
 
-def rechne_abweichungsanalyse(werte): 
+def rechne_abweichungsanalyse(werte):
     plan_menge = werte["plan_menge"]
     plan_preis = werte["plan_preis"]
     ist_menge = werte["ist_menge"]
@@ -506,19 +502,13 @@ def zeige_fehlend(fehlt, mit_gruenden):
         print(f"  {', '.join(namen)}")
         print("  (--fehlend zeigt, was fehlt)")
 
-def zeige_ergebnis(name, ergebnis):
-    print()
-    print(f"{name}:")
-    for bezeichnung, (wert, einheit) in ergebnis.items():
-        print(f"  {bezeichnung + ':':28} {formatiere_wert(wert, einheit):>18}")
-
 
 def zeige_unbekannte(unbekannte):
     if not unbekannte:
         return
 
     print()
-    print(f"Unbekannte Groessen ({len(unbekannte)}) - keine Rechnung verwendet sie:")
+    print(f"Unbekannte Größen ({len(unbekannte)}) - keine Rechnung verwendet sie:")
     for name, vorschlaege in unbekannte:
         vorschlaege_text = f" (meinst du {', '.join(vorschlaege)}?)" if vorschlaege else ""
         print(f"  - {name}{vorschlaege_text}")
