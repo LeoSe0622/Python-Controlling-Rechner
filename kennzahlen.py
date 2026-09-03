@@ -5,6 +5,7 @@ Aufruf:
 """
 import argparse
 import csv
+import difflib
 import sys
 
 
@@ -29,6 +30,8 @@ def lade_werte(csv_pfad):
     werte = {}
     for zeile in zeilen:
         name = zeile["groesse"]
+        if name in werte:
+            raise CsvFehler(f"Größe kommt mehrfach vor: {name}")
         try:
             werte[name] = float(zeile["wert"].replace(".", "").replace(",", "."))
         except ValueError:
@@ -370,62 +373,138 @@ def rechne_eva(werte):
 
 
 RECHNUNGEN = [
-    ("Deckungsbeitragsrechnung",
+    ("Teilkostenrechnung", "Deckungsbeitragsrechnung",
      {"absatzmenge", "preis_stueck", "var_kosten_stueck", "fixkosten"},
      rechne_deckungsbeitrag),
-    ("Break-Even-Analyse",
+    ("Teilkostenrechnung", "Break-Even-Analyse",
      {"absatzmenge", "preis_stueck", "var_kosten_stueck", "fixkosten"},
      rechne_break_even),
-    ("ROI / DuPont", {"umsatz", "betriebsergebnis", "gesamtkapital"}, rechne_roi),
-    ("Kapitalstruktur", {"eigenkapital", "fremdkapital"}, rechne_kapitalstruktur),
-    ("Liquidität", {"jahresueberschuss", "abschreibungen", "umlaufvermoegen", "kurzfristige_verbindlichkeiten"}, rechne_liquidität),
-    ("Investitionsrechnung (statisch)", {"anschaffungswert", "restwert", "nutzungsdauer", "kalkulationszinssatz", "jaehrlicher_gewinn"}, rechne_investition_statisch),
-    ("Investitionsrechnung (dynamisch)" , {"kalkulationszinssatz", "zahlung_0"},rechne_investition_dynamisch),
-    ("Interner Zinsfuß", {"zahlung_0"}, rechne_interner_zinsfuss),
-    ("Make-or-Buy",
-     {"var_kosten_stueck_eigen", "fixkosten_eigen", "bezugspreis_stueck", "menge"},
-     rechne_make_or_buy),
-    ("Prozesskostenrechnung",
-     {"prozesskosten_lmi", "prozesskosten_lmn", "prozessmenge"},
-     rechne_prozesskosten),
-    ("Economic Value Added",
-     {"nopat", "investiertes_kapital", "kapitalkostensatz"},
-     rechne_eva),
-    ("Abweichungsanalyse (Material)",
-     {"plan_menge", "plan_preis", "ist_menge", "ist_preis"},
-     rechne_abweichungsanalyse),
-    ("Plankostenrechnung (flexibel)",
-     {"plan_beschaeftigung", "ist_beschaeftigung", "plan_fixkosten",
-      "plan_var_kosten_je_einheit", "ist_kosten"},
-     rechne_plankosten),
-    ("Kostenartenrechnung",
+    ("Vollkostenrechnung", "Kostenartenrechnung",
      {"materialkosten", "personalkosten", "abschreibungen", "sonstige_kosten"},
      rechne_kostenarten),
-    ("Zuschlagssätze (BAB)",
+    ("Vollkostenrechnung", "Zuschlagssätze (BAB)",
      {"fertigungsmaterial", "materialgemeinkosten", "fertigungsloehne",
       "fertigungsgemeinkosten", "verwaltungsgemeinkosten", "vertriebsgemeinkosten"},
      rechne_zuschlagssaetze),
-    ("Zuschlagskalkulation",
+    ("Vollkostenrechnung", "Zuschlagskalkulation",
      {"fertigungsmaterial_stueck", "fertigungsloehne_stueck", "mgk_satz",
       "fgk_satz", "vwgk_satz", "vtgk_satz", "gewinnzuschlag"},
      rechne_kalkulation),
+    ("Vollkostenrechnung", "Prozesskostenrechnung",
+     {"prozesskosten_lmi", "prozesskosten_lmn", "prozessmenge"},
+     rechne_prozesskosten),
+    ("Kontrolle und Steuerung", "Abweichungsanalyse (Material)",
+     {"plan_menge", "plan_preis", "ist_menge", "ist_preis"},
+     rechne_abweichungsanalyse),
+    ("Kontrolle und Steuerung", "Plankostenrechnung (flexibel)",
+     {"plan_beschaeftigung", "ist_beschaeftigung", "plan_fixkosten",
+      "plan_var_kosten_je_einheit", "ist_kosten"},
+     rechne_plankosten),
+    ("Kontrolle und Steuerung", "Make-or-Buy",
+     {"var_kosten_stueck_eigen", "fixkosten_eigen", "bezugspreis_stueck", "menge"},
+     rechne_make_or_buy),
+    ("Investitionsrechnung", "Investitionsrechnung (statisch)",
+     {"anschaffungswert", "restwert", "nutzungsdauer", "kalkulationszinssatz",
+      "jaehrlicher_gewinn"},
+     rechne_investition_statisch),
+    ("Investitionsrechnung", "Investitionsrechnung (dynamisch)",
+     {"kalkulationszinssatz", "zahlung_0"},
+     rechne_investition_dynamisch),
+    ("Investitionsrechnung", "Interner Zinsfuß",
+     {"zahlung_0"},
+     rechne_interner_zinsfuss),
+    ("Kennzahlen", "ROI / DuPont",
+     {"umsatz", "betriebsergebnis", "gesamtkapital"},
+     rechne_roi),
+    ("Kennzahlen", "Kapitalstruktur",
+     {"eigenkapital", "fremdkapital"},
+     rechne_kapitalstruktur),
+    ("Kennzahlen", "Liquidität",
+     {"jahresueberschuss", "abschreibungen", "umlaufvermoegen",
+      "kurzfristige_verbindlichkeiten"},
+     rechne_liquidität),
+    ("Kennzahlen", "Economic Value Added",
+     {"nopat", "investiertes_kapital", "kapitalkostensatz"},
+     rechne_eva),
 ]
+
+
+def alle_bekannten_groessen():
+    bekannt = set()
+    for _, _, benoetigt, _ in RECHNUNGEN:
+        bekannt |= benoetigt
+    return bekannt
+
+
+def pruefe_groessen(werte):
+    bekannt = alle_bekannten_groessen()
+    unbekannt = set(werte) - bekannt
+    ergebnisse = []
+    for name in sorted(unbekannt):
+        if name.startswith("zahlung_") and name[8:].isdigit():
+            continue
+        vorschlaege = difflib.get_close_matches(name, sorted(bekannt), n=3, cutoff=0.7)
+        ergebnisse.append((name, vorschlaege))
+    return ergebnisse
 
 
 def fuehre_rechnungen_aus(werte):
     ergebnisse = []
     fehlt = []
     vorhanden = set(werte)
-    for name, benoetigt, funktion in RECHNUNGEN:
+    for gruppe, name, benoetigt, funktion in RECHNUNGEN:
         if benoetigt <= vorhanden:
             try:
-                ergebnisse.append((name, funktion(werte)))
+                ergebnisse.append((gruppe, name, funktion(werte)))
             except ZeroDivisionError:
-                fehlt.append(f"{name} (Division durch Null)")
+                fehlt.append((name, "Division durch Null"))
         else:
-            fehlt.append(f"{name} (braucht {', '.join(sorted(benoetigt - vorhanden))})")
+            fehlt.append((name, f"braucht {', '.join(sorted(benoetigt - vorhanden))}"))
     return ergebnisse, fehlt
 
+
+GRUPPEN_REIHENFOLGE = [
+    "Teilkostenrechnung",
+    "Vollkostenrechnung",
+    "Kontrolle und Steuerung",
+    "Investitionsrechnung",
+    "Kennzahlen"
+]
+
+
+def zeige_ergebnisse(ergebnisse):
+    if not ergebnisse:
+        print("Keine Rechnung möglich. Die Datei enthält keine der benötigten Größen.")
+        return
+
+    nach_gruppe = {}
+    for gruppe, name, ergebnis in ergebnisse:
+        nach_gruppe.setdefault(gruppe, []).append((name, ergebnis))
+
+    for gruppe in GRUPPEN_REIHENFOLGE:
+        if gruppe not in nach_gruppe:
+            continue
+        print()
+        print(f"{gruppe}:")
+        for name, ergebnis in nach_gruppe[gruppe]:
+            print(f"  {name}:")
+            for bezeichnung, (wert, einheit) in ergebnis.items():
+                print(f"    {bezeichnung + ':':28} {formatiere_wert(wert, einheit):>18}")
+
+
+def zeige_fehlend(fehlt, mit_gruenden):
+    if not fehlt:
+        return
+
+    print()
+    print(f"Nicht möglich ({len(fehlt)})")
+    if mit_gruenden:
+        for name, grund in fehlt:
+            print(f"  - {name} ({grund})")
+    else:
+        namen = [name for name, _ in fehlt]
+        print(f"  {', '.join(namen)}")
+        print("  (--fehlend zeigt, was fehlt)")
 
 def zeige_ergebnis(name, ergebnis):
     print()
@@ -434,11 +513,50 @@ def zeige_ergebnis(name, ergebnis):
         print(f"  {bezeichnung + ':':28} {formatiere_wert(wert, einheit):>18}")
 
 
+def zeige_unbekannte(unbekannte):
+    if not unbekannte:
+        return
+
+    print()
+    print(f"Unbekannte Groessen ({len(unbekannte)}) - keine Rechnung verwendet sie:")
+    for name, vorschlaege in unbekannte:
+        vorschlaege_text = f" (meinst du {', '.join(vorschlaege)}?)" if vorschlaege else ""
+        print(f"  - {name}{vorschlaege_text}")
+
+
+def zeige_rechnungsliste():
+    nach_gruppe = {}
+    for gruppe, name, benoetigt, _ in RECHNUNGEN:
+        nach_gruppe.setdefault(gruppe, []).append((name, benoetigt))
+
+    for gruppe in GRUPPEN_REIHENFOLGE:
+        if gruppe not in nach_gruppe:
+            continue
+        print()
+        print(f"{gruppe}:")
+        for name, benoetigt in nach_gruppe[gruppe]:
+            print(f"  {name}:")
+            print(f"    {', '.join(sorted(benoetigt))}")
+    print()
+    print("Beispieldatei mit allen Groessen: tests/04_alles.csv")
+
 def main():
     parser = argparse.ArgumentParser(description="Controlling-Rechnungen aus einer Wertetabelle berechnen.")
-    parser.add_argument("csv_pfad", help="Pfad zur CSV-Datei mit den Spalten 'groesse' und 'wert'")
-
+    
+    parser.add_argument("csv_pfad", nargs="?", help="Pfad zur CSV-Datei mit den Spalten 'groesse' und 'wert'")
+    parser.add_argument("--fehlend", action="store_true",
+                        help="zeigt, welche Größen den nicht möglichen Rechnungen fehlen")
+    parser.add_argument("--liste", action="store_true",
+                        help="zeigt alle Rechnungen mit ihren benötigten Größen")
     args = parser.parse_args()
+    
+    if args.csv_pfad is None and not args.liste:
+        parser.error("Ohne --liste brauche ich eine CSV-Datei.")
+
+    if args.liste:
+        zeige_rechnungsliste()
+        return
+
     csv_pfad = args.csv_pfad
 
     try:
@@ -447,15 +565,16 @@ def main():
         print(f"Fehler: {fehler}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Datei: {csv_pfad}")
-    print(f"Größen: {', '.join(sorted(werte.keys()))}")
-    print(f"{len(werte)} Werte gelesen")
+    print("=" * 60)
+    print(f"  {csv_pfad}   —   {len(werte)} Größen gelesen")
+    print("=" * 60)
 
+    unbekannte = pruefe_groessen(werte)
+    zeige_unbekannte(unbekannte)
     ergebnisse, fehlt = fuehre_rechnungen_aus(werte)
 
-    for name, ergebnis in ergebnisse:
-        zeige_ergebnis(name, ergebnis)
-    zeige_liste("Nicht möglich:", fehlt)
+    zeige_ergebnisse(ergebnisse)
+    zeige_fehlend(fehlt, args.fehlend)
 
 
 if __name__ == "__main__":

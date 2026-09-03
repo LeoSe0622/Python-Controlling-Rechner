@@ -14,6 +14,17 @@ import unittest
 import kennzahlen
 
 
+def starte(*argumente):
+    """Startet kennzahlen.py als eigenen Prozess, so wie ein Nutzer es täte."""
+    # PYTHONIOENCODING zwingt das Kindprogramm, UTF-8 zu schreiben. Ohne das
+    # benutzt es unter Windows cp1252, und "Nicht möglich" ließe sich hier
+    # nicht als UTF-8 dekodieren.
+    umgebung = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    return subprocess.run([sys.executable, "kennzahlen.py", *argumente],
+                          capture_output=True, text=True,
+                          encoding="utf-8", env=umgebung)
+
+
 # Eingabewerte, die in mehreren Tests gebraucht werden.
 DB_WERTE = {
     "absatzmenge": 5000.0,
@@ -177,6 +188,10 @@ class TestLadeWerte(unittest.TestCase):
         with self.assertRaises(kennzahlen.CsvFehler):
             kennzahlen.lade_werte("tests/gibtsnicht.csv")
 
+        # Doppelte Größe: würde sonst still die frühere überschreiben.
+        with self.assertRaises(kennzahlen.CsvFehler):
+            kennzahlen.lade_werte("tests/14_doppelte_groesse.csv")
+
     # TODO 36 - Klasse TestKommandozeile - das Programm als Ganzes aufrufen.
     #   Das ersetzt, was ich bisher jede Runde von Hand gemacht habe.
     #
@@ -202,28 +217,32 @@ class TestLadeWerte(unittest.TestCase):
 
 class TestKommandozeile(unittest.TestCase):
     def test_kommandozeile(self):
-        def starte(*argumente):
-            # PYTHONIOENCODING zwingt das Kindprogramm, UTF-8 zu schreiben.
-            # Ohne das benutzt es unter Windows cp1252 und "Nicht möglich"
-            # laesst sich hier nicht als UTF-8 dekodieren.
-            umgebung = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-            return subprocess.run([sys.executable, "kennzahlen.py", *argumente],
-                                  capture_output=True, text=True,
-                                  encoding="utf-8", env=umgebung)
-
+        # Bei 04_alles.csv geht jede Rechnung auf - der Block darf gar nicht erscheinen.
         ergebnis = starte("tests/04_alles.csv")
         self.assertEqual(ergebnis.returncode, 0)
-        self.assertIn("Nicht möglich:", ergebnis.stdout)
+        self.assertIn("Teilkostenrechnung:", ergebnis.stdout)
+        self.assertNotIn("Nicht möglich", ergebnis.stdout)
+        # Ohne --liste darf die Rechnungsliste nicht mitkommen.
+        self.assertNotIn("Beispieldatei", ergebnis.stdout)
 
         ergebnis = starte("tests/01_deckungsbeitrag.csv")
         self.assertEqual(ergebnis.returncode, 0)
         self.assertIn("Deckungsbeitragsrechnung", ergebnis.stdout)
+        self.assertIn("Nicht möglich (", ergebnis.stdout)
 
+        # Der Grund steht nur mit --fehlend dabei.
         ergebnis = starte("tests/06_nulldivision.csv")
+        self.assertEqual(ergebnis.returncode, 0)
+        self.assertNotIn("Division durch Null", ergebnis.stdout)
+
+        ergebnis = starte("tests/06_nulldivision.csv", "--fehlend")
         self.assertEqual(ergebnis.returncode, 0)
         self.assertIn("Division durch Null", ergebnis.stdout)
 
         ergebnis = starte("tests/07_leer.csv")
+        self.assertEqual(ergebnis.returncode, 1)
+
+        ergebnis = starte("tests/14_doppelte_groesse.csv")
         self.assertEqual(ergebnis.returncode, 1)
 
         ergebnis = starte("tests/gibtsnicht.csv")
@@ -232,13 +251,21 @@ class TestKommandozeile(unittest.TestCase):
         ergebnis = starte()
         self.assertEqual(ergebnis.returncode, 2)
 
+    def test_fehlend_zeigt_mehr(self):
+        """--fehlend muss ausführlicher sein als der Aufruf ohne."""
+        kurz = starte("tests/01_deckungsbeitrag.csv").stdout
+        lang = starte("tests/01_deckungsbeitrag.csv", "--fehlend").stdout
+        self.assertGreater(len(lang), len(kurz))
+        self.assertIn("braucht", lang)
+        self.assertNotIn("braucht", kurz)
+
 
 class TestRegister(unittest.TestCase):
     """Prüft das Register selbst, nicht einzelne Formeln."""
 
     def test_jede_rechenfunktion_ist_eingetragen(self):
         """Eine geschriebene, aber nicht eingetragene Funktion wird nie aufgerufen."""
-        eingetragen = {funktion for _, _, funktion in kennzahlen.RECHNUNGEN}
+        eingetragen = {funktion for _, _, _, funktion in kennzahlen.RECHNUNGEN}
         geschrieben = {
             getattr(kennzahlen, name)
             for name in dir(kennzahlen)
@@ -248,8 +275,14 @@ class TestRegister(unittest.TestCase):
         self.assertEqual(vergessen, [], f"nicht im Register: {vergessen}")
 
     def test_namen_sind_eindeutig(self):
-        namen = [name for name, _, _ in kennzahlen.RECHNUNGEN]
+        namen = [name for _, name, _, _ in kennzahlen.RECHNUNGEN]
         self.assertEqual(len(namen), len(set(namen)))
+
+    def test_jede_gruppe_steht_in_der_reihenfolge(self):
+        """Eine Gruppe, die in GRUPPEN_REIHENFOLGE fehlt, fällt still aus der Ausgabe."""
+        gruppen = {gruppe for gruppe, _, _, _ in kennzahlen.RECHNUNGEN}
+        unbekannt = sorted(gruppen - set(kennzahlen.GRUPPEN_REIHENFOLGE))
+        self.assertEqual(unbekannt, [], f"nicht in GRUPPEN_REIHENFOLGE: {unbekannt}")
 
     def test_alles_csv_laesst_jede_rechnung_laufen(self):
         """tests/04_alles.csv muss alle Größen enthalten, die irgendeine Rechnung braucht."""
@@ -261,13 +294,75 @@ class TestRegister(unittest.TestCase):
     def test_ergebnisse_haben_wert_und_einheit(self):
         """Jede Rechnung muss {Bezeichnung: (Zahl, Einheit)} liefern."""
         werte = kennzahlen.lade_werte("tests/04_alles.csv")
-        for name, _, funktion in kennzahlen.RECHNUNGEN:
+        for _, name, _, funktion in kennzahlen.RECHNUNGEN:
             with self.subTest(rechnung=name):
                 for bezeichnung, paar in funktion(werte).items():
                     self.assertEqual(len(paar), 2, f"{name} / {bezeichnung}")
                     wert, einheit = paar
                     self.assertIsInstance(wert, (int, float))
                     self.assertIsInstance(einheit, str)
+
+
+class TestUnbekannteGroessen(unittest.TestCase):
+    """Prüft die Tippfehler-Erkennung gegen das Register."""
+
+    def setUp(self):
+        werte = kennzahlen.lade_werte("tests/15_tippfehler.csv")
+        self.unbekannte = kennzahlen.pruefe_groessen(werte)
+        self.namen = [name for name, _ in self.unbekannte]
+
+    def test_tippfehler_wird_gemeldet(self):
+        self.assertIn("absatzmnge", self.namen)
+
+    def test_vorschlag_passt(self):
+        vorschlaege = dict(self.unbekannte).get("absatzmnge", [])
+        self.assertIn("absatzmenge", vorschlaege)
+
+    def test_zahlungsreihe_ist_kein_tippfehler(self):
+        """zahlung_1 und zahlung_2 stehen in keinem benötigt-Set, sind aber gewollt."""
+        self.assertNotIn("zahlung_1", self.namen)
+        self.assertNotIn("zahlung_2", self.namen)
+
+    def test_gueltige_groessen_werden_nicht_gemeldet(self):
+        self.assertNotIn("fixkosten", self.namen)
+
+    def test_vollstaendige_datei_meldet_nichts(self):
+        """Schlägt an, sobald eine Größe benutzt, aber nicht ins Register eingetragen wird."""
+        werte = kennzahlen.lade_werte("tests/04_alles.csv")
+        self.assertEqual(kennzahlen.pruefe_groessen(werte), [])
+
+    def test_hinweis_steht_in_der_ausgabe(self):
+        """Prüft den Weg über main() - die Unit-Tests oben rufen nur die Funktion."""
+        ergebnis = starte("tests/15_tippfehler.csv")
+        self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr)
+        self.assertIn("absatzmnge", ergebnis.stdout)
+        self.assertIn("absatzmenge", ergebnis.stdout)
+        self.assertNotIn("zahlung_1", ergebnis.stdout)
+
+
+class TestListe(unittest.TestCase):
+    """--liste zeigt das Register an, ohne dass eine CSV-Datei nötig ist."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Einmal fuer alle drei Tests - der Aufruf liest nichts und aendert nichts.
+        cls.ergebnis = starte("--liste")
+
+    def test_liste_laeuft_ohne_datei(self):
+        self.assertEqual(self.ergebnis.returncode, 0, self.ergebnis.stderr)
+        self.assertTrue(self.ergebnis.stdout.strip())
+
+    def test_jede_rechnung_steht_drin(self):
+        """Eine Rechnung, die --liste verschweigt, findet der Nutzer nie."""
+        for _, name, _, _ in kennzahlen.RECHNUNGEN:
+            with self.subTest(rechnung=name):
+                self.assertIn(name, self.ergebnis.stdout)
+
+    def test_jede_groesse_steht_drin(self):
+        """Jeder Name, den eine Rechnung braucht, muss hier abzulesen sein."""
+        for groesse in sorted(kennzahlen.alle_bekannten_groessen()):
+            with self.subTest(groesse=groesse):
+                self.assertIn(groesse, self.ergebnis.stdout)
 
 
 if __name__ == "__main__":

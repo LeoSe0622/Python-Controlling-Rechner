@@ -33,7 +33,6 @@ plan_var_kosten_je_einheit;4,00
 ist_kosten;96000,00
 materialkosten;300000,00
 personalkosten;450000,00
-abschreibungen;80000,00
 sonstige_kosten;70000,00
 fertigungsmaterial;200000,00
 materialgemeinkosten;20000,00
