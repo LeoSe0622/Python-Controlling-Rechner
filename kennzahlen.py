@@ -181,6 +181,194 @@ def rechne_investition_dynamisch(werte):
     }
 
 
+def rechne_abweichungsanalyse(werte): 
+    plan_menge = werte["plan_menge"]
+    plan_preis = werte["plan_preis"]
+    ist_menge = werte["ist_menge"]
+    ist_preis = werte["ist_preis"]
+
+    plankosten = plan_menge * plan_preis
+    istkosten = ist_menge * ist_preis
+    gesamtabweichung = istkosten - plankosten
+    preisabweichung = (ist_preis - plan_preis) * ist_menge
+    verbrauchsabweichung = (ist_menge - plan_menge) * plan_preis
+
+    return {
+        "Plankosten": (plankosten, "€"),
+        "Istkosten": (istkosten, "€"),
+        "Gesamtabweichung": (gesamtabweichung, "€"),
+        "Preisabweichung": (preisabweichung, "€"),
+        "Verbrauchsabweichung": (verbrauchsabweichung, "€")
+    }
+
+
+def rechne_plankosten(werte):
+    plan_beschaeftigung = werte["plan_beschaeftigung"]
+    ist_beschaeftigung = werte["ist_beschaeftigung"]
+    plan_fixkosten = werte["plan_fixkosten"]
+    plan_var_kosten_je_einheit = werte["plan_var_kosten_je_einheit"]
+    ist_kosten = werte["ist_kosten"]
+
+    plankosten = plan_fixkosten + plan_var_kosten_je_einheit * plan_beschaeftigung
+    verrechnungssatz = plankosten / plan_beschaeftigung
+    verrechnete = verrechnungssatz * ist_beschaeftigung
+    sollkosten = plan_fixkosten + plan_var_kosten_je_einheit * ist_beschaeftigung
+    gesamtabweichung = ist_kosten - verrechnete
+    verbrauchsabw = ist_kosten - sollkosten
+    beschaeftigungsabw = sollkosten - verrechnete
+
+    return {
+        "Plankosten": (plankosten, "€"),
+        "Plankostenverrechnungssatz": (verrechnungssatz, "€"),
+        "Verrechnete Plankosten": (verrechnete, "€"),
+        "Sollkosten": (sollkosten, "€"),
+        "Gesamtabweichung": (gesamtabweichung, "€"),
+        "Verbrauchsabweichung": (verbrauchsabw, "€"),
+        "Beschäftigungsabweichung": (beschaeftigungsabw, "€")
+    }
+
+
+def rechne_kostenarten(werte):
+    materialkosten = werte["materialkosten"]
+    personalkosten = werte["personalkosten"]
+    abschreibungen = werte["abschreibungen"]
+    sonstige_kosten = werte["sonstige_kosten"]
+
+    gesamtkosten = materialkosten + personalkosten + abschreibungen + sonstige_kosten
+    materialanteil = materialkosten / gesamtkosten
+    personalanteil = personalkosten / gesamtkosten
+    abschreibungsanteil = abschreibungen / gesamtkosten
+    sonstige_anteil = sonstige_kosten / gesamtkosten
+
+    return {
+        "Gesamtkosten": (gesamtkosten, "€"),
+        "Materialanteil": (materialanteil, "%"),
+        "Personalanteil": (personalanteil, "%"),
+        "Abschreibungsanteil": (abschreibungsanteil, "%"),
+        "Sonstige Kosten Anteil": (sonstige_anteil, "%")
+    }
+
+
+def rechne_zuschlagssaetze(werte):
+    fertigungsmaterial = werte["fertigungsmaterial"]
+    materialgemeinkosten = werte["materialgemeinkosten"]
+    fertigungsloehne = werte["fertigungsloehne"]
+    fertigungsgemeinkosten = werte["fertigungsgemeinkosten"]
+    verwaltungsgemeinkosten = werte["verwaltungsgemeinkosten"]
+    vertriebsgemeinkosten = werte["vertriebsgemeinkosten"]
+
+    materialkosten = fertigungsmaterial + materialgemeinkosten
+    fertigungskosten = fertigungsloehne + fertigungsgemeinkosten
+    herstellkosten = materialkosten + fertigungskosten
+
+    mgk_satz = materialgemeinkosten / fertigungsmaterial
+    fgk_satz = fertigungsgemeinkosten / fertigungsloehne
+    vwgk_satz = verwaltungsgemeinkosten / herstellkosten
+    vtgk_satz = vertriebsgemeinkosten / herstellkosten
+
+    return {
+        "Materialkosten": (materialkosten, "€"),
+        "Fertigungskosten": (fertigungskosten, "€"),
+        "Herstellkosten": (herstellkosten, "€"),
+        "Materialgemeinkostenzuschlag": (mgk_satz, "%"),
+        "Fertigungsgemeinkostenzuschlag": (fgk_satz, "%"),
+        "Verwaltungsgemeinkostenzuschlag": (vwgk_satz, "%"),
+        "Vertriebsgemeinkostenzuschlag": (vtgk_satz, "%")
+    }
+
+
+def rechne_kalkulation(werte):
+    fm_stueck = werte["fertigungsmaterial_stueck"]
+    fl_stueck = werte["fertigungsloehne_stueck"]
+    mgk_satz = werte["mgk_satz"]
+    fgk_satz = werte["fgk_satz"]
+    vwgk_satz = werte["vwgk_satz"]
+    vtgk_satz = werte["vtgk_satz"]
+    gewinnzuschlag = werte["gewinnzuschlag"]
+
+    materialkosten = fm_stueck * (1 + mgk_satz)
+    fertigungskosten = fl_stueck * (1 + fgk_satz)
+    herstellkosten = materialkosten + fertigungskosten
+    selbstkosten = herstellkosten * (1 + vwgk_satz + vtgk_satz)
+    gewinn = selbstkosten * gewinnzuschlag
+    barverkaufspreis = selbstkosten + gewinn
+
+    return {
+        "Materialkosten": (materialkosten, "€"),
+        "Fertigungskosten": (fertigungskosten, "€"),
+        "Herstellkosten": (herstellkosten, "€"),
+        "Selbstkosten": (selbstkosten, "€"),
+        "Gewinn": (gewinn, "€"),
+        "Barverkaufspreis": (barverkaufspreis, "€")
+    }
+
+
+def rechne_interner_zinsfuss(werte):
+    zahlungen = sammle_zahlungen(werte)
+
+    def kapitalwert_bei(zahlungen, i):
+        return sum(zahlung / (1 + i) ** t for t, zahlung in enumerate(zahlungen))
+
+    unten, oben = 0.0, 1.0
+    for _ in range(100):
+        mitte = (unten + oben) / 2
+        if kapitalwert_bei(zahlungen, mitte) > 0:
+            unten = mitte
+        else:
+            oben = mitte
+
+    return {"Interner Zinsfuß": (mitte, "%")}
+
+
+def rechne_make_or_buy(werte):
+    var_kosten_stueck_eigen = werte["var_kosten_stueck_eigen"]
+    fixkosten_eigen = werte["fixkosten_eigen"]
+    bezugspreis_stueck = werte["bezugspreis_stueck"]
+    menge = werte["menge"]
+
+    eigenfertigung = fixkosten_eigen + var_kosten_stueck_eigen * menge
+    fremdbezug = bezugspreis_stueck * menge
+    vorteil = fremdbezug - eigenfertigung
+    kritische_menge = fixkosten_eigen / (bezugspreis_stueck - var_kosten_stueck_eigen)
+
+    return {
+        "Eigenfertigungskosten": (eigenfertigung, "€"),
+        "Fremdbezugskosten": (fremdbezug, "€"),
+        "Vorteil Eigenfertigung": (vorteil, "€"),
+        "Kritische Menge": (kritische_menge, "Stück")
+    }
+
+
+def rechne_prozesskosten(werte):
+    prozesskosten_lmi = werte["prozesskosten_lmi"]
+    prozesskosten_lmn = werte["prozesskosten_lmn"]
+    prozessmenge = werte["prozessmenge"]
+
+    lmi_satz = prozesskosten_lmi / prozessmenge
+    umlagesatz = prozesskosten_lmn / prozesskosten_lmi
+    gesamtsatz = lmi_satz * (1 + umlagesatz)
+
+    return {
+        "LMI-Satz": (lmi_satz, "€"),
+        "Umlagesatz": (umlagesatz, "%"),
+        "Gesamtsatz": (gesamtsatz, "€")
+    }
+
+
+def rechne_eva(werte):
+    nopat = werte["nopat"]
+    investiertes_kapital = werte["investiertes_kapital"]
+    kapitalkostensatz = werte["kapitalkostensatz"]
+
+    kapitalkosten = investiertes_kapital * kapitalkostensatz
+    eva = nopat - kapitalkosten
+
+    return {
+        "Kapitalkosten": (kapitalkosten, "€"),
+        "Economic Value Added": (eva, "€")
+    }
+
+
 RECHNUNGEN = [
     ("Deckungsbeitragsrechnung",
      {"absatzmenge", "preis_stueck", "var_kosten_stueck", "fixkosten"},
@@ -193,6 +381,16 @@ RECHNUNGEN = [
     ("Liquidität", {"jahresueberschuss", "abschreibungen", "umlaufvermoegen", "kurzfristige_verbindlichkeiten"}, rechne_liquidität),
     ("Investitionsrechnung (statisch)", {"anschaffungswert", "restwert", "nutzungsdauer", "kalkulationszinssatz", "jaehrlicher_gewinn"}, rechne_investition_statisch),
     ("Investitionsrechnung (dynamisch)" , {"kalkulationszinssatz", "zahlung_0"},rechne_investition_dynamisch),
+    ("Interner Zinsfuß", {"zahlung_0"}, rechne_interner_zinsfuss),
+    ("Make-or-Buy",
+     {"var_kosten_stueck_eigen", "fixkosten_eigen", "bezugspreis_stueck", "menge"},
+     rechne_make_or_buy),
+    ("Prozesskostenrechnung",
+     {"prozesskosten_lmi", "prozesskosten_lmn", "prozessmenge"},
+     rechne_prozesskosten),
+    ("Economic Value Added",
+     {"nopat", "investiertes_kapital", "kapitalkostensatz"},
+     rechne_eva)
 ]
 
 
